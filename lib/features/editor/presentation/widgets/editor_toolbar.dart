@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/mermaid_samples.dart';
 
-/// エディターツールバー
+/// エディターツールバー（スクロール可能、コンパクト配置）
 class EditorToolbar extends ConsumerWidget {
   final TextEditingController controller;
 
@@ -11,8 +11,7 @@ class EditorToolbar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(
@@ -26,86 +25,115 @@ class EditorToolbar extends ConsumerWidget {
         child: Row(
           children: [
             // 見出しボタン
-            _HeadingDropdown(controller: controller),
-            const _ToolbarDivider(),
+            _CompactDropdown(
+              icon: Icons.title,
+              tooltip: '見出し',
+              items: List.generate(6, (i) => 'H${i + 1}'),
+              onSelected: (value) {
+                final level = int.parse(value.substring(1));
+                final prefix = '#' * level + ' ';
+                _insertAtLineStart(controller, prefix);
+              },
+            ),
+            _divider(context),
 
-            // 書式ボタン
-            _ToolbarButton(
-              icon: Icons.format_bold,
-              tooltip: '太字',
-              onPressed: () => _wrapText(controller, '**', '**'),
+            // 書式ボタン (グループ1: よく使う)
+            _IconBtn(
+              Icons.format_bold,
+              '太字',
+              () => _wrapText(controller, '**', '**'),
             ),
-            _ToolbarButton(
-              icon: Icons.format_italic,
-              tooltip: '斜体',
-              onPressed: () => _wrapText(controller, '_', '_'),
+            _IconBtn(
+              Icons.format_italic,
+              '斜体',
+              () => _wrapText(controller, '_', '_'),
             ),
-            _ToolbarButton(
-              icon: Icons.strikethrough_s,
-              tooltip: '取り消し線',
-              onPressed: () => _wrapText(controller, '~~', '~~'),
-            ),
-            _ToolbarButton(
-              icon: Icons.code,
-              tooltip: 'インラインコード',
-              onPressed: () => _wrapText(controller, '`', '`'),
-            ),
-            const _ToolbarDivider(),
+            _IconBtn(Icons.code, 'コード', () => _wrapText(controller, '`', '`')),
+            _divider(context),
 
-            // リストボタン
-            _ToolbarButton(
-              icon: Icons.format_list_bulleted,
-              tooltip: '箇条書きリスト',
-              onPressed: () => _insertAtLineStart(controller, '- '),
+            // リスト
+            _IconBtn(
+              Icons.format_list_bulleted,
+              '箇条書き',
+              () => _insertAtLineStart(controller, '- '),
             ),
-            _ToolbarButton(
-              icon: Icons.format_list_numbered,
-              tooltip: '番号付きリスト',
-              onPressed: () => _insertAtLineStart(controller, '1. '),
+            _IconBtn(
+              Icons.check_box_outlined,
+              'チェック',
+              () => _insertAtLineStart(controller, '- [ ] '),
             ),
-            _ToolbarButton(
-              icon: Icons.check_box_outlined,
-              tooltip: 'チェックリスト',
-              onPressed: () => _insertAtLineStart(controller, '- [ ] '),
-            ),
-            const _ToolbarDivider(),
+            _divider(context),
 
-            // その他のマークダウン要素
-            _ToolbarButton(
-              icon: Icons.format_quote,
-              tooltip: '引用',
-              onPressed: () => _insertAtLineStart(controller, '> '),
+            // リンク・画像
+            _IconBtn(
+              Icons.link,
+              'リンク',
+              () => _wrapText(controller, '[', '](url)'),
             ),
-            _ToolbarButton(
-              icon: Icons.horizontal_rule,
-              tooltip: '水平線',
-              onPressed: () => _insertText(controller, '\n---\n'),
+            _IconBtn(
+              Icons.image,
+              '画像',
+              () => _insertText(controller, '![alt](url)'),
             ),
-            _ToolbarButton(
-              icon: Icons.link,
-              tooltip: 'リンク',
-              onPressed: () => _wrapText(controller, '[', '](url)'),
-            ),
-            _ToolbarButton(
-              icon: Icons.image,
-              tooltip: '画像',
-              onPressed: () =>
-                  _insertText(controller, '![alt text](image_url)'),
-            ),
-            _ToolbarButton(
-              icon: Icons.table_chart,
-              tooltip: 'テーブル',
-              onPressed: () => _insertTable(controller),
-            ),
-            _ToolbarButton(
-              icon: Icons.data_object,
-              tooltip: 'コードブロック',
-              onPressed: () => _insertCodeBlock(controller),
-            ),
-            const _ToolbarDivider(),
+            _divider(context),
 
-            // Mermaidサンプル
+            // その他 (Moreメニュー)
+            _MoreMenu(controller: controller),
+            _divider(context),
+
+            // Mermaid
             _MermaidDropdown(controller: controller),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _divider(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 24,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      color: Theme.of(context).dividerTheme.color?.withValues(alpha: 0.5),
+    );
+  }
+}
+
+/// コンパクトなドロップダウン
+class _CompactDropdown extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final List<String> items;
+  final Function(String) onSelected;
+
+  const _CompactDropdown({
+    required this.icon,
+    required this.tooltip,
+    required this.items,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      itemBuilder: (context) => items.map((item) {
+        return PopupMenuItem<String>(
+          value: item,
+          height: 36,
+          child: Text(item),
+        );
+      }).toList(),
+      onSelected: onSelected,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18),
+            const Icon(Icons.arrow_drop_down, size: 16),
           ],
         ),
       ),
@@ -113,38 +141,95 @@ class EditorToolbar extends ConsumerWidget {
   }
 }
 
-/// 見出しドロップダウン
-class _HeadingDropdown extends StatelessWidget {
-  final TextEditingController controller;
+/// アイコンボタン（コンパクト版）
+class _IconBtn extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
 
-  const _HeadingDropdown({required this.controller});
+  const _IconBtn(this.icon, this.tooltip, this.onPressed);
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<int>(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.title, size: 20),
-            SizedBox(width: 4),
-            Text('見出し'),
-            Icon(Icons.arrow_drop_down, size: 20),
-          ],
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onPressed,
+        child: Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          child: Icon(icon, size: 18),
         ),
       ),
-      itemBuilder: (context) => List.generate(6, (index) {
-        final level = index + 1;
-        return PopupMenuItem<int>(
-          value: level,
-          child: Text('H$level - 見出し$level'),
-        );
-      }),
-      onSelected: (level) {
-        final prefix = '#' * level + ' ';
-        _insertAtLineStart(controller, prefix);
+    );
+  }
+}
+
+/// その他のオプションメニュー
+class _MoreMenu extends StatelessWidget {
+  final TextEditingController controller;
+
+  const _MoreMenu({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'その他',
+      padding: EdgeInsets.zero,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [Icon(Icons.more_horiz, size: 18)],
+        ),
+      ),
+      itemBuilder: (context) => [
+        _menuItem('strikethrough', Icons.strikethrough_s, '取り消し線'),
+        _menuItem('numbered', Icons.format_list_numbered, '番号付きリスト'),
+        _menuItem('quote', Icons.format_quote, '引用'),
+        _menuItem('hr', Icons.horizontal_rule, '水平線'),
+        _menuItem('table', Icons.table_chart, 'テーブル'),
+        _menuItem('codeblock', Icons.data_object, 'コードブロック'),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'strikethrough':
+            _wrapText(controller, '~~', '~~');
+            break;
+          case 'numbered':
+            _insertAtLineStart(controller, '1. ');
+            break;
+          case 'quote':
+            _insertAtLineStart(controller, '> ');
+            break;
+          case 'hr':
+            _insertText(controller, '\n---\n');
+            break;
+          case 'table':
+            _insertTable(controller);
+            break;
+          case 'codeblock':
+            _insertCodeBlock(controller);
+            break;
+        }
       },
+    );
+  }
+
+  PopupMenuItem<String> _menuItem(String value, IconData icon, String label) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 40,
+      child: Row(
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 12),
+          Text(label),
+        ],
+      ),
     );
   }
 }
@@ -158,8 +243,11 @@ class _MermaidDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<MermaidSampleItem>(
+      tooltip: 'Mermaid図を挿入',
+      padding: EdgeInsets.zero,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(4),
@@ -169,17 +257,20 @@ class _MermaidDropdown extends StatelessWidget {
           children: [
             Icon(
               Icons.schema_outlined,
-              size: 20,
+              size: 16,
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 4),
             Text(
               'Mermaid',
-              style: TextStyle(color: Theme.of(context).colorScheme.primary),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
             Icon(
               Icons.arrow_drop_down,
-              size: 20,
+              size: 16,
               color: Theme.of(context).colorScheme.primary,
             ),
           ],
@@ -188,6 +279,7 @@ class _MermaidDropdown extends StatelessWidget {
       itemBuilder: (context) => MermaidSamples.allSamples.map((sample) {
         return PopupMenuItem<MermaidSampleItem>(
           value: sample,
+          height: 40,
           child: Row(
             children: [
               Text(sample.icon, style: const TextStyle(fontSize: 16)),
@@ -204,60 +296,13 @@ class _MermaidDropdown extends StatelessWidget {
   }
 }
 
-/// ツールバーボタン
-class _ToolbarButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  const _ToolbarButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(4),
-        child: Container(
-          width: 36,
-          height: 36,
-          alignment: Alignment.center,
-          child: Icon(icon, size: 20),
-        ),
-      ),
-    );
-  }
-}
-
-/// ツールバー区切り線
-class _ToolbarDivider extends StatelessWidget {
-  const _ToolbarDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 24,
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      color: Theme.of(context).dividerTheme.color,
-    );
-  }
-}
-
 // ヘルパー関数
 
-/// テキストをラップ（太字、斜体など）
 void _wrapText(TextEditingController controller, String prefix, String suffix) {
   final selection = controller.selection;
   final text = controller.text;
 
   if (selection.isCollapsed) {
-    // 選択がない場合はプレースホルダーを挿入
     final newText = '$prefix$suffix';
     final cursorPos = selection.start;
     controller.text =
@@ -266,7 +311,6 @@ void _wrapText(TextEditingController controller, String prefix, String suffix) {
       offset: cursorPos + prefix.length,
     );
   } else {
-    // 選択範囲をラップ
     final selectedText = text.substring(selection.start, selection.end);
     final newText = '$prefix$selectedText$suffix';
     controller.text =
@@ -279,7 +323,6 @@ void _wrapText(TextEditingController controller, String prefix, String suffix) {
   }
 }
 
-/// テキストを挿入
 void _insertText(TextEditingController controller, String insertText) {
   final selection = controller.selection;
   final text = controller.text;
@@ -292,13 +335,11 @@ void _insertText(TextEditingController controller, String insertText) {
   );
 }
 
-/// 行頭にテキストを挿入
 void _insertAtLineStart(TextEditingController controller, String prefix) {
   final text = controller.text;
   final selection = controller.selection;
   final cursorPos = selection.start;
 
-  // 現在の行の開始位置を見つける
   int lineStart = cursorPos;
   while (lineStart > 0 && text[lineStart - 1] != '\n') {
     lineStart--;
@@ -311,7 +352,6 @@ void _insertAtLineStart(TextEditingController controller, String prefix) {
   );
 }
 
-/// テーブルを挿入
 void _insertTable(TextEditingController controller) {
   const table = '''
 
@@ -324,7 +364,6 @@ void _insertTable(TextEditingController controller) {
   _insertText(controller, table);
 }
 
-/// コードブロックを挿入
 void _insertCodeBlock(TextEditingController controller) {
   const codeBlock = '''
 

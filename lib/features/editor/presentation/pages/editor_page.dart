@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers/editor_provider.dart';
+import '../providers/file_provider.dart';
 import '../widgets/editor_toolbar.dart';
+import '../widgets/file_drawer.dart';
 import '../../../preview/presentation/widgets/markdown_preview.dart';
 
 /// メインエディターページ
@@ -14,46 +17,20 @@ class EditorPage extends ConsumerStatefulWidget {
 
 class _EditorPageState extends ConsumerState<EditorPage> {
   late TextEditingController _controller;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isToolbarExpanded = true;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: _getInitialContent());
+    _controller = TextEditingController();
     _controller.addListener(_onTextChanged);
-  }
-
-  String _getInitialContent() {
-    return '''# Markdown & Mermaid Editor へようこそ！
-
-このエディターでは、**Markdown** と **Mermaid** ダイアグラムを編集・プレビューできます。
-
-## 機能
-
-- 📝 プレーンテキストエディター
-- 👀 リアルタイムプレビュー
-- 📊 Mermaidダイアグラム対応
-
-## サンプルコード
-
-${'```'}dart
-void main() {
-  print('Hello, Markdown!');
-}
-${'```'}
-
-## チェックリスト
-
-- [x] エディター実装
-- [x] プレビュー実装
-- [ ] その他の機能
-
-> 💡 **ヒント**: ツールバーからMermaidサンプルを挿入できます！
-
-''';
   }
 
   void _onTextChanged() {
     ref.read(editorProvider.notifier).updateContent(_controller.text);
+    // 自動保存
+    ref.read(fileProvider.notifier).saveCurrentFile(_controller.text);
   }
 
   @override
@@ -66,11 +43,61 @@ ${'```'}
   @override
   Widget build(BuildContext context) {
     final editorState = ref.watch(editorProvider);
+    final fileState = ref.watch(fileProvider);
+
+    // ファイルが変更されたらコントローラーを更新
+    ref.listen<FileState>(fileProvider, (previous, next) {
+      if (next.currentFile != null &&
+          (previous?.currentFile?.id != next.currentFile?.id)) {
+        _controller.text = next.currentFile!.content;
+      }
+    });
+
+    // 初回ロード時
+    if (fileState.currentFile != null && _controller.text.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _controller.text = fileState.currentFile!.content;
+      });
+    }
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const FileDrawer(),
       appBar: AppBar(
-        title: const Text('Markdown Editor'),
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          tooltip: 'ファイル一覧',
+          onPressed: () {
+            _scaffoldKey.currentState?.openDrawer();
+          },
+        ),
+        title: Text(
+          fileState.currentFile?.name ?? 'ドキュメントを選択',
+          style: const TextStyle(fontSize: 16),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
+          // 共有ボタン
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: '共有',
+            onPressed: fileState.currentFile != null
+                ? () => _shareContent(fileState.currentFile!.content)
+                : null,
+          ),
+          // ツールバー表示切替
+          IconButton(
+            icon: Icon(
+              _isToolbarExpanded ? Icons.keyboard_hide : Icons.keyboard,
+            ),
+            tooltip: _isToolbarExpanded ? 'ツールバーを隠す' : 'ツールバーを表示',
+            onPressed: () {
+              setState(() {
+                _isToolbarExpanded = !_isToolbarExpanded;
+              });
+            },
+          ),
           // モード切り替えボタン
           _ModeToggleButton(
             currentMode: editorState.mode,
@@ -82,19 +109,37 @@ ${'```'}
       ),
       body: Column(
         children: [
-          // ツールバー（エディターモード時のみ表示）
+          // ツールバー（折りたたみ可能、エディターモード時のみ）
           if (editorState.mode != EditorMode.preview)
-            EditorToolbar(controller: _controller),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: _isToolbarExpanded ? null : 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 150),
+                opacity: _isToolbarExpanded ? 1.0 : 0.0,
+                child: _isToolbarExpanded
+                    ? EditorToolbar(controller: _controller)
+                    : const SizedBox.shrink(),
+              ),
+            ),
 
           // メインコンテンツ
-          Expanded(child: _buildContent(editorState)),
+          Expanded(child: _buildContent(editorState, fileState)),
         ],
       ),
     );
   }
 
-  Widget _buildContent(EditorState state) {
-    switch (state.mode) {
+  void _shareContent(String content) {
+    SharePlus.instance.share(ShareParams(text: content));
+  }
+
+  Widget _buildContent(EditorState editorState, FileState fileState) {
+    if (fileState.currentFile == null) {
+      return _buildNoFileSelected();
+    }
+
+    switch (editorState.mode) {
       case EditorMode.plainText:
         return _PlainTextEditor(controller: _controller);
 
@@ -114,9 +159,52 @@ ${'```'}
         );
     }
   }
+
+  Widget _buildNoFileSelected() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.description_outlined,
+            size: 64,
+            color: Theme.of(context).colorScheme.outline,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'ドキュメントを選択してください',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.menu),
+                label: const Text('ファイル一覧'),
+                onPressed: () {
+                  _scaffoldKey.currentState?.openDrawer();
+                },
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('新規作成'),
+                onPressed: () async {
+                  await ref.read(fileProvider.notifier).createFile();
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/// プレーンテキストエディター
+/// プレーンテキストエディター（スクロールバー常時表示）
 class _PlainTextEditor extends StatelessWidget {
   final TextEditingController controller;
 
@@ -126,22 +214,25 @@ class _PlainTextEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
-      child: TextField(
-        controller: controller,
-        maxLines: null,
-        expands: true,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.all(16),
-          hintText: 'ここに Markdown を入力...',
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: TextField(
+          controller: controller,
+          maxLines: null,
+          expands: true,
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.all(16),
+            hintText: 'ここに Markdown を入力...',
+          ),
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 14,
+            height: 1.5,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          textAlignVertical: TextAlignVertical.top,
         ),
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 14,
-          height: 1.5,
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
-        textAlignVertical: TextAlignVertical.top,
       ),
     );
   }
@@ -160,7 +251,6 @@ class _SplitView extends StatelessWidget {
         MediaQuery.of(context).orientation == Orientation.portrait;
 
     if (isPortrait) {
-      // 縦向きの場合は上下分割
       return Column(
         children: [
           Expanded(child: editor),
@@ -169,7 +259,6 @@ class _SplitView extends StatelessWidget {
         ],
       );
     } else {
-      // 横向きの場合は左右分割
       return Row(
         children: [
           Expanded(child: editor),
